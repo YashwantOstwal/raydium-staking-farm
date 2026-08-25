@@ -69,5 +69,6 @@ pub fn handle_withdraw_reward(ctx:Context<WithdrawReward>,reward_stream_idx:u8)-
 
         transfer_checked(transfer_ctx, ctx.accounts.reward_vault.amount, ctx.accounts.reward_mint.decimals)?;
     }
+    farm.reward_streams[reward_stream_idx as usize].rewards_left_x64 = 0;
     Ok(())
 }
