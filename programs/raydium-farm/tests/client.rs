@@ -498,8 +498,8 @@ pub struct WithdrawRewardIxn<'a> {
     pub staking_mint:&'a Pubkey,
     pub reward_stream_idx:u8
 }
-pub fn withdraw_reward(svm:&mut LiteSVM, WithdrawRewardIxn { creator, staking_mint, reward_stream_idx}) -> std::result::Result<TransactionMetadata,FailedTransactionMetadata> {
-    let hasher = Sha256::new();
+pub fn withdraw_reward(svm:&mut LiteSVM, WithdrawRewardIxn { creator, staking_mint, reward_stream_idx}:WithdrawRewardIxn) -> std::result::Result<TransactionMetadata,FailedTransactionMetadata> {
+    let mut hasher = Sha256::new();
     hasher.update("global:withdraw_reward");
     let hash = hasher.finalize();
 
@@ -507,23 +507,32 @@ pub fn withdraw_reward(svm:&mut LiteSVM, WithdrawRewardIxn { creator, staking_mi
     withdraw_reward_ixn_discriminator.copy_from_slice(&hash[..8]);
 
     let mut withdraw_reward_ixn_data = withdraw_reward_ixn_discriminator.to_vec();
-    withdraw_reward_ixn_data.extend_from_slice(&reward_stream_idx.to_le_bytes());
-
+    
     let farm_pda = derive_farm_pda(staking_mint);
     let farm = get_farm(svm, &farm_pda);
     let farm_reward_stream = &farm.reward_streams[reward_stream_idx as usize];
-
+    
+    withdraw_reward_ixn_data.extend_from_slice(&reward_stream_idx.to_le_bytes());
     let creator_reward_token = get_associated_token_address_with_program_id(&creator.pubkey(), &farm_reward_stream.reward_mint, &farm_reward_stream.reward_mint_program);
     let reward_vault_pda = get_associated_token_address_with_program_id(&farm_pda, &farm_reward_stream.reward_mint, &farm_reward_stream.reward_mint_program);
     
     let withdraw_reward_ixn_ctx = vec![
         AccountMeta::new_readonly(creator.pubkey(),true),
         AccountMeta::new_readonly(*staking_mint,false),
-        AccountMeta::new(*farm_pda,false),
+        AccountMeta::new(farm_pda,false),
         AccountMeta::new_readonly(farm_reward_stream.reward_mint,false),
         AccountMeta::new(creator_reward_token,false),
         AccountMeta::new(reward_vault_pda,false),
         AccountMeta::new_readonly(farm_reward_stream.reward_mint_program,false),
     ];
+
+    let withdraw_reward_ixn = Instruction {
+        accounts:withdraw_reward_ixn_ctx,
+        data:withdraw_reward_ixn_data,
+        program_id:RAYDIUM_PROGRAM_ID
+    };
+
+    let tx = Transaction::new_signed_with_payer(&[withdraw_reward_ixn], Some(&creator.pubkey()), &[creator], svm.latest_blockhash());
+    svm.send_transaction(tx)
     
 }

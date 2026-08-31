@@ -12,10 +12,7 @@ use solana_sdk::{
 };
 
 pub mod client;
-pub mod helpers;
-
 pub use client::*;
-pub use helpers::*;
 
 
 
@@ -546,14 +543,14 @@ pub fn test_raydium_farm() {
     //  3) reward vault of 2nd stream balance = 3000000 tokens.
     
     let reward_1_mint = CreateMint::new(&mut svm,&yash).authority(&yash.pubkey()).decimals(6).token_program_id(&token::ID).send().unwrap();
-    let creator_reward_1_token = CreateAssociatedTokenAccount::new(&mut svm,&yash,&reward_1_mint).owner(&yash.pubkey()).token_program_id(&token::ID).send().unwrap();
+    let yash_reward_1_token = CreateAssociatedTokenAccount::new(&mut svm,&yash,&reward_1_mint).owner(&yash.pubkey()).token_program_id(&token::ID).send().unwrap();
     let alice_reward_1_token = CreateAssociatedTokenAccount::new(&mut svm,&alice,&reward_1_mint).owner(&alice.pubkey()).token_program_id(&token::ID).send().unwrap();
     alice_reward_tokens.push(alice_reward_1_token);
     let bob_reward_1_token = CreateAssociatedTokenAccount::new(&mut svm,&bob,&reward_1_mint).owner(&bob.pubkey()).token_program_id(&token::ID).send().unwrap();
     bob_reward_tokens.push(bob_reward_1_token);
 
 
-    MintTo::new(&mut svm, &yash, &reward_1_mint, &creator_reward_1_token, 7500000).send().unwrap(); // Minting just enough.
+    MintTo::new(&mut svm, &yash, &reward_1_mint, &yash_reward_1_token, 7500000).send().unwrap(); // Minting just enough.
     
     let open_time = clock.unix_timestamp + 2;
     let end_time = clock.unix_timestamp + 2 + 3; 
@@ -568,6 +565,10 @@ pub fn test_raydium_farm() {
     
     let farm = get_farm(&svm,&farm_pda);
     assert_eq!(farm.reward_streams_count,2);
+    
+    let farm_reward_1_token = get_associated_token_address_with_program_id(&farm_pda, &reward_1_mint,&token::ID);
+    let reward_vault_1_token_account: TokenAccount = get_spl_account(&svm, &farm_reward_1_token).unwrap();
+    assert_eq!(reward_vault_1_token_account.amount,3000000);
 
     let farm_reward_1_stream = &farm.reward_streams[1];
     
@@ -609,16 +610,18 @@ pub fn test_raydium_farm() {
 
     let farm_before = get_farm(&svm, &farm_pda);
     let farm_reward_stream_0_before = &farm_before.reward_streams[0];
-    let farm_reward_stream_1_before = &farm_before.reward_streams[1];
-
+    
     let farm_reward_0_token_account_before:TokenAccount = get_spl_account(&svm, &farm_reward_0_token).unwrap();
-    let farm_reward_1_token_account_before:TokenAccount = get_spl_account(&svm, &farm_reward_0_token).unwrap();
-
+    
     let bob_ledger_before = get_user_ledger(&svm, &bob_ledger_pda);
     let bob_ledger_reward_stream_0_before = &bob_ledger_before.reward_infos[0];
-    let bob_ledger_reward_stream_1_before = &bob_ledger_before.reward_infos[1];
-
+    
     let bob_reward_0_token_before:TokenAccount = get_spl_account(&svm, &bob_reward_tokens[0]).unwrap();
+
+    
+    let farm_reward_stream_1_before = &farm_before.reward_streams[1];
+    let farm_reward_1_token_account_before:TokenAccount = get_spl_account(&svm, &farm_reward_0_token).unwrap();
+    let bob_ledger_reward_stream_1_before = &bob_ledger_before.reward_infos[1];
     let bob_reward_1_token_before:TokenAccount = get_spl_account(&svm, &bob_reward_tokens[1]).unwrap();
 
     
@@ -634,15 +637,12 @@ pub fn test_raydium_farm() {
     let farm_reward_stream_1_after = &farm_after.reward_streams[1];
 
     let farm_reward_0_token_account_after:TokenAccount = get_spl_account(&svm, &farm_reward_0_token).unwrap();
-    let farm_reward_1_token_account_after:TokenAccount = get_spl_account(&svm, &farm_reward_0_token).unwrap();
-
-
+    
+    
     let bob_ledger_after = get_user_ledger(&svm, &bob_ledger_pda);
     let bob_ledger_reward_stream_0_after = &bob_ledger_after.reward_infos[0];
-    let bob_ledger_reward_stream_1_after = &bob_ledger_after.reward_infos[1];
-
+    
     let bob_reward_0_token_after:TokenAccount = get_spl_account(&svm, &bob_reward_tokens[0]).unwrap();
-    let bob_reward_1_token_after:TokenAccount = get_spl_account(&svm, &bob_reward_tokens[1]).unwrap();
 
   
     let duration = farm_reward_stream_0_before.end_time.checked_sub(farm_reward_stream_0_before.end_time.min(farm_before.last_updated_time)).unwrap() as u128; 
@@ -682,12 +682,17 @@ pub fn test_raydium_farm() {
     assert_eq!(expected_bob_reward_0_rewards_debt_x64,32680375u128.checked_shl(64).unwrap().checked_div(1000).unwrap());
     assert_eq!(bob_ledger_reward_stream_0_after.rewards_debt_x64,expected_bob_reward_0_rewards_debt_x64);    // - (4)
     
-
+    assert_eq!(farm_reward_stream_0_after.status,RewardStreamStatus::Ended); 
 
     assert_eq!(farm_reward_stream_1_after.open_time,clock.unix_timestamp);
     assert_eq!(farm_reward_stream_1_after.status,RewardStreamStatus::Running);
 
-    assert_eq!(farm_reward_stream_0_after.status,RewardStreamStatus::Ended);
+    // Like above verify it for reward stream 1
+    let farm_reward_1_token_account_after:TokenAccount = get_spl_account(&svm, &farm_reward_0_token).unwrap();
+    let bob_ledger_reward_stream_1_after = &bob_ledger_after.reward_infos[1];
+    let bob_reward_1_token_after:TokenAccount = get_spl_account(&svm, &bob_reward_tokens[1]).unwrap();
+
+
 
     let farm_before = get_farm(&svm,&farm_pda);
     let farm_reward_stream_0_before = &farm_before.reward_streams[0];
@@ -772,6 +777,7 @@ pub fn test_raydium_farm() {
     unstake(&mut svm,UnstakeIxn { staker: &bob, staking_mint: &staking_mint, staker_staking_token: &bob_staking_ata, reward_tokens: &bob_reward_tokens, withdraw_amount: bob_ledger_before.staked_amount }).unwrap();
 
     let farm_after = get_farm(&svm, &farm_pda);
+    assert_eq!(farm_after.staked_amount,0);
     let farm_reward_stream_0_after = &farm_after.reward_streams[0];
     let farm_reward_stream_1_after = &farm_after.reward_streams[1];
 
@@ -860,15 +866,31 @@ pub fn test_raydium_farm() {
     assert_eq!(bob_ledger_reward_stream_1_after.rewards_debt_x64,expected_bob_reward_1_rewards_debt_x64);    // - (4)
 
   
-    time_travel(&mut svm,3);
-    let clock = svm.get_sysvar::<Clock>();
-    assert_eq!(clock.unix_timestamp,9);
 
-    // t = 9, Restarting the reward stream 2 for a second with emission rate to be 1500000 tokens / second such that the total_rewards_x64 < rewards_left_x64,
+    time_travel(&mut svm,2);
+    let clock = svm.get_sysvar::<Clock>();
+    assert_eq!(clock.unix_timestamp,8);
+
+
+    // t = 8, Restarting the reward stream 2 for a second with emission rate to be 1500000 tokens / second such that the total_rewards_x64 < rewards_left_x64,
     // the farm refunds the excess to the creator reward token from its vault.
+   
+    svm.expire_blockhash();
+    harvest(&mut svm,HarvestIxn {
+        staker:&bob,
+        staking_mint:&staking_mint,
+        reward_tokens:&bob_reward_tokens
+    }).unwrap(); // Invoked to update the farm. No rewards is emitted as the staked amount is 0.
+    
+    let farm_before = get_farm(&svm,&farm_pda);
+    let yash_reward_1_token_account_before:TokenAccount = get_spl_account(&svm,&yash_reward_1_token).unwrap();
+
+    let farm_reward_stream_1_before = &farm_before.reward_streams[1 as usize];
+    assert_eq!(farm_reward_stream_1_before.status,RewardStreamStatus::Ended);
+    assert_eq!(farm_reward_stream_1_before.rewards_left_x64,2000000u128.checked_shl(64).unwrap());
 
     let open_time = clock.unix_timestamp;
-    let end_time = clock.unix_timestamp + 3;
+    let end_time = clock.unix_timestamp + 1;
     let emission_per_second_x64 = 1500000u128.checked_shl(64).unwrap();
 
     restart_rewards(&mut svm, RestartRewardsIxn { creator: &yash, staking_mint: &staking_mint, reward_stream_idx: 1, reward_stream: RewardStreamArgs{
@@ -877,10 +899,83 @@ pub fn test_raydium_farm() {
         emission_per_second_x64,
     } }).unwrap();
 
+    let farm_after = get_farm(&svm,&farm_pda);
+
+    let yash_reward_1_token_account_after:TokenAccount = get_spl_account(&svm,&yash_reward_1_token).unwrap();
+    assert_eq!(yash_reward_1_token_account_after.amount.checked_sub(yash_reward_1_token_account_before.amount).unwrap(),500000);
+
+    let farm_reward_stream_1_after = &farm_after.reward_streams[1 as usize];
+    assert_eq!(farm_reward_stream_1_after.status,RewardStreamStatus::Running);
+    assert_eq!(farm_reward_stream_1_after.rewards_left_x64,1500000u128.checked_shl(64).unwrap());
+    assert_eq!(farm_reward_stream_1_after.acc_rewards_per_base_unit_x64,farm_reward_stream_1_before.acc_rewards_per_base_unit_x64);
+
+
+
+
     time_travel(&mut svm,1);
     let clock = svm.get_sysvar::<Clock>();
-    assert_eq!(clock.unix_timestamp,10);
-    // At t = 10
-    // All the streams are ended and Every staker have claimed their latest rewards so we can safely withdraw the reward funds from the vault.
+    assert_eq!(clock.unix_timestamp,9);
 
+    // At t = 10
+    // All the streams are ended and Every staker have claimed their transferrable pending rewards so we can safely withdraw the unclaimed rewards and the dust (accrued loss of rewards of all the stakers due to rounding math) from the reward vaults.
+
+    svm.expire_blockhash();
+    harvest(&mut svm,HarvestIxn {
+        staker:&bob,
+        staking_mint:&staking_mint,
+        reward_tokens:&bob_reward_tokens
+    }).unwrap(); // Invoked to update the farm. No rewards is emitted as the staked amount is 0.
+    
+    
+    let farm: raydium_farm::Farm = get_farm(&svm,&farm_pda);
+    assert_eq!(farm.last_updated_time,clock.unix_timestamp);
+
+    let farm_reward_stream_0 = &farm.reward_streams[0];
+    let farm_reward_stream_1 = &farm.reward_streams[1];
+
+    assert_eq!(farm_reward_stream_0.status,RewardStreamStatus::Ended);
+    assert_eq!(farm_reward_stream_1.status,RewardStreamStatus::Ended);
+
+
+    let yash_reward_0_token_account_before:TokenAccount = get_spl_account(&svm,&yash_reward_0_token).unwrap();
+    let reward_vault_0_token_account_before: TokenAccount = get_spl_account(&svm, &farm_reward_0_token).unwrap();
+
+    withdraw_reward(&mut svm, WithdrawRewardIxn {
+        creator:&yash,
+        staking_mint:&staking_mint,
+        reward_stream_idx:0
+    }).unwrap();
+
+    let farm: raydium_farm::Farm = get_farm(&svm,&farm_pda);
+    let reward_vault_0_token_account_after: TokenAccount = get_spl_account(&svm, &farm_reward_0_token).unwrap();
+    let yash_reward_0_token_account_after:TokenAccount = get_spl_account(&svm,&yash_reward_0_token).unwrap();
+
+    assert!(yash_reward_0_token_account_after.amount >= yash_reward_0_token_account_before.amount.checked_add(reward_vault_0_token_account_before.amount).unwrap());
+
+    assert_eq!(yash_reward_0_token_account_after.amount.checked_sub(yash_reward_0_token_account_before.amount).unwrap(),reward_vault_0_token_account_before.amount.checked_sub(reward_vault_0_token_account_after.amount).unwrap());
+
+    assert_eq!(reward_vault_0_token_account_after.amount,0);
+    assert_eq!(farm.reward_streams[0].rewards_left_x64,0);
+
+
+    let yash_reward_1_token_account_before:TokenAccount = get_spl_account(&svm,&yash_reward_1_token).unwrap();
+    let reward_vault_1_token_account_before: TokenAccount = get_spl_account(&svm, &farm_reward_1_token).unwrap();
+
+    withdraw_reward(&mut svm, WithdrawRewardIxn {
+        creator:&yash,
+        staking_mint:&staking_mint,
+        reward_stream_idx:1
+    }).unwrap();
+
+    let farm: raydium_farm::Farm = get_farm(&svm,&farm_pda);
+    let reward_vault_1_token_account_after: TokenAccount = get_spl_account(&svm, &farm_reward_1_token).unwrap();
+    let yash_reward_1_token_account_after:TokenAccount = get_spl_account(&svm,&yash_reward_1_token).unwrap();
+
+    assert!(yash_reward_1_token_account_after.amount >= yash_reward_1_token_account_before.amount.checked_add(reward_vault_1_token_account_before.amount).unwrap());
+
+    assert_eq!(yash_reward_1_token_account_after.amount.checked_sub(yash_reward_1_token_account_before.amount).unwrap(),reward_vault_1_token_account_before.amount.checked_sub(reward_vault_1_token_account_after.amount).unwrap());
+
+    assert_eq!(reward_vault_1_token_account_after.amount,0);
+    assert_eq!(farm.reward_streams[1].rewards_left_x64,0);
+    
 }

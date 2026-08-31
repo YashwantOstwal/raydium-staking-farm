@@ -44,25 +44,25 @@ impl Farm {
             for i in 0..self.reward_streams_count {
                 if block_timestamp <  self.reward_streams[i as usize].open_time {
                     self.reward_streams[i as usize].status = RewardStreamStatus::Unused;
-                }else if self.reward_streams[i as usize].open_time <= block_timestamp &&  block_timestamp <= self.reward_streams[i as usize].end_time  {
-                   self.reward_streams[i as usize].status = RewardStreamStatus::Running;
-                   if self.staked_amount > 0 {
-                       let duration = block_timestamp.checked_sub(self.reward_streams[i as usize].open_time.max(self.last_updated_time)).unwrap() as u128;
-                       let new_emission = duration.checked_mul(self.reward_streams[i as usize].emission_per_second_x64).unwrap();
-                       
-                       self.reward_streams[i as usize].rewards_left_x64 = self.reward_streams[i as usize].rewards_left_x64.checked_sub(new_emission).unwrap();
-                       self.reward_streams[i as usize].acc_rewards_per_base_unit_x64 = self.reward_streams[i as usize].acc_rewards_per_base_unit_x64.checked_add(new_emission.checked_div(self.staked_amount as u128).unwrap()).unwrap();
-                   }
-                }else {
-                   self.reward_streams[i as usize].status = RewardStreamStatus::Ended;
-                   if self.staked_amount > 0 {
-                       let duration = self.reward_streams[i as usize].end_time.checked_sub(self.reward_streams[i as usize].end_time.min(self.last_updated_time)).unwrap() as u128;
-                       let new_emission = duration.checked_mul(self.reward_streams[i as usize].emission_per_second_x64).unwrap();
+                    continue;
+                }
 
-                       self.reward_streams[i as usize].rewards_left_x64 = self.reward_streams[i as usize].rewards_left_x64.checked_sub(new_emission).unwrap();
-                       self.reward_streams[i as usize].acc_rewards_per_base_unit_x64 = self.reward_streams[i as usize].acc_rewards_per_base_unit_x64.checked_add(new_emission.checked_div(self.staked_amount.into()).unwrap()).unwrap();
-                   }
+                let duration = if self.reward_streams[i as usize].open_time <= block_timestamp &&  block_timestamp < self.reward_streams[i as usize].end_time  {
+                    self.reward_streams[i as usize].status = RewardStreamStatus::Running;
+                    let duration = block_timestamp.checked_sub(self.reward_streams[i as usize].open_time.max(self.last_updated_time)).unwrap() as u128;
+                    duration
+                }else {
+                    self.reward_streams[i as usize].status = RewardStreamStatus::Ended;
+                    let duration = self.reward_streams[i as usize].end_time.checked_sub(self.reward_streams[i as usize].end_time.min(self.last_updated_time)).unwrap() as u128;
+                    duration
                 };
+                
+                if self.staked_amount > 0 {
+                    let new_emission = duration.checked_mul(self.reward_streams[i as usize].emission_per_second_x64).unwrap();
+                    
+                    self.reward_streams[i as usize].rewards_left_x64 = self.reward_streams[i as usize].rewards_left_x64.checked_sub(new_emission).unwrap();
+                    self.reward_streams[i as usize].acc_rewards_per_base_unit_x64 = self.reward_streams[i as usize].acc_rewards_per_base_unit_x64.checked_add(new_emission.checked_div(self.staked_amount.into()).unwrap()).unwrap();
+                }
             }
             self.last_updated_time = block_timestamp;
         }
